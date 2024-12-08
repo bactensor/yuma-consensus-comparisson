@@ -1,0 +1,83 @@
+# General
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+*.cache
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Operating System Files
+*.~lock.*
+*.bak
+*.tmp
+*.temp
+*.swp
+*~
+
+# Logs and databases
+*.log
+*.sqlite3
+*.db
+
+# Temporary files and backups
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.save
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*.pid
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.coverage
+*.cover
+.hypothesis/
+.tox/
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
