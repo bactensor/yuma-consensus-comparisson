@@ -22,8 +22,9 @@ class YumaConfig:
     validator_emission_ratio = 0.41
     total_subnet_stake = 1_000_000
 
-def Yuma(
+def Yuma2(
     W: torch.Tensor,
+    W_prev: torch.Tensor,
     S: torch.Tensor,
     B_old: Optional[torch.Tensor] = None,
     config: YumaConfig = YumaConfig()
@@ -34,6 +35,9 @@ def Yuma(
 
     # === Weight ===
     W = (W.T / (W.sum(dim=1) + 1e-6)).T
+
+    if W_prev is None:
+        W_prev = W
 
     # === Stake ===
     S = S / S.sum()
@@ -61,7 +65,7 @@ def Yuma(
     C = (C / C.sum() * 65_535).int() / 65_535
 
     # === Consensus clipped weight ===
-    W_clipped = torch.min(W, C)
+    W_clipped = torch.min(W_prev, C)
 
     # === Rank ===
     R = (S.view(-1, 1) * W_clipped).sum(dim=0)
@@ -74,7 +78,7 @@ def Yuma(
     T_v = W_clipped.sum(dim=1) / W.sum(dim=1)
 
     # === Bonds ===
-    W_b = (1 - config.bond_penalty) * W + config.bond_penalty * W_clipped
+    W_b = (1 - config.bond_penalty) * W_prev + config.bond_penalty * W_clipped
     B = S.view(-1, 1) * W_b / (S.view(-1, 1) * W_b).sum(dim=0)
     B = B.nan_to_num(0)
 
