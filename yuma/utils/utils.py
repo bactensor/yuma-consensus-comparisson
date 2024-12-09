@@ -8,6 +8,8 @@ def run_simulation(
     weights: list[torch.Tensor],
     num_epochs: int,
     config,
+    reset_bonds_epoch: Optional[int] = None,
+    reset_bonds_miner_index: Optional[int] = None,
 ) -> tuple[dict[str, list[float]], list[torch.Tensor]]:
     """
     Runs the simulation over multiple epochs using the specified Yuma function.
@@ -23,6 +25,8 @@ def run_simulation(
         stakes_tao = S * config.total_subnet_stake
         stakes_units = stakes_tao / 1_000
 
+        if B_state is not None and epoch == reset_bonds_epoch:
+            B_state[:, reset_bonds_miner_index] = 0.0
         result = Yuma3(W=W, S=S, B_old=B_state, config=config)
 
         B_state = result['validator_bonds']

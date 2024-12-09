@@ -127,6 +127,8 @@ if __name__ == "__main__":
             stakes=case.stakes_epochs,
             weights=case.weights_epochs,
             num_epochs=case.num_epochs,
+            reset_bonds_epoch=case.reset_bonds_epoch,
+            reset_bonds_miner_index=case.reset_bonds_index,
             config=config,
         )
         total_dividends, _ = calculate_total_dividends(
