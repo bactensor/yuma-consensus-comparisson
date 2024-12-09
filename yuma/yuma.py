@@ -24,12 +24,11 @@ class YumaConfig:
     validator_emission_ratio = 0.41
     total_subnet_stake = 1_000_000
 
-def Yuma3(
+def Yuma4(
     W: torch.Tensor,
     S: torch.Tensor,
     B_old: Optional[torch.Tensor] = None,
     config: YumaConfig = YumaConfig(),
-    maxint: int = 2 ** 64 - 1,
 ) -> Dict[str, Union[torch.Tensor, float]]:
     """
     Original Yuma function with bonds and EMA calculation.
@@ -76,32 +75,44 @@ def Yuma3(
     T = (R / P).nan_to_num(0)
     T_v = W_clipped.sum(dim=1) / W.sum(dim=1)
 
+    # === Liquid Alpha Adjustment ===
+    a = b = None
+    bond_alpha = config.bond_alpha
+    if config.liquid_alpha:
+        consensus_high = config.override_consensus_high if config.override_consensus_high is not None else C.quantile(0.75)
+        consensus_low = config.override_consensus_low if config.override_consensus_low is not None else C.quantile(0.25)
+
+        if consensus_high == consensus_low:
+            consensus_high = C.quantile(0.99)
+
+        a = (math.log(1 / config.alpha_high - 1) - math.log(1 / config.alpha_low - 1)) / (consensus_low - consensus_high)
+        b = math.log(1 / config.alpha_low - 1) + a * consensus_low
+        alpha = 1 / (1 + math.e ** (-a * C + b))  # alpha to the old weight
+        bond_alpha = 1 - torch.clamp(alpha, config.alpha_low, config.alpha_high)
+
     # === Bonds ===
     if B_old is None:
         B_old = torch.zeros_like(W)
 
-    capacity = S * maxint
-
-    # Compute Remaining Capacity
-    capacity_per_bond = S.unsqueeze(1) * maxint
-    remaining_capacity = capacity_per_bond - B_old
+    B_decayed = B_old *  (1 - bond_alpha)
+    remaining_capacity = 1.0 - B_decayed
     remaining_capacity = torch.clamp(remaining_capacity, min=0.0)
 
-    # Compute Purchase Capacity
-    capacity_alpha = (config.capacity_alpha * capacity).unsqueeze(1)
-    purchase_capacity = torch.min(capacity_alpha, remaining_capacity)
+    # Each validator can increase bonds by at most bond_alpha per epoch towards the cap
+    purchase_increment = bond_alpha * W  # Validators allocate their purchase across miners based on weights
+    # Ensure that purchase does not exceed remaining capacity
+    purchase = torch.min(purchase_increment, remaining_capacity)
 
-    # Allocate Purchase to Miners
-    purchase = purchase_capacity * W
+    B = B_decayed + purchase
+    B = torch.clamp(B, max=1.0)
 
-    # Update Bonds with Decay and Purchase
-    decay = 1 - config.decay_rate
-    B = decay * B_old + purchase
-    B = torch.min(B, capacity_per_bond)  # Enforce capacity constraints
+    # === Dividends Calculation ===
+    total_bonds_per_validator = (B * I).sum(dim=1)  # Sum over miners for each validator
+    D = S * total_bonds_per_validator  # Element-wise multiplication
 
-    # === Validator reward ===
-    D = (B * I).sum(dim=1)
+    # Normalize dividends
     D_normalized = D / (D.sum() + 1e-6)
+
 
     return {
         "weight": W,
@@ -111,8 +122,6 @@ def Yuma3(
         "consensus_clipped_weight": W_clipped,
         "server_rank": R,
         "server_incentive": I,
-        "server_trust": T,
-        "validator_trust": T_v,
         "validator_bonds": B,
         "validator_reward": D,
         "validator_reward_normalized": D_normalized

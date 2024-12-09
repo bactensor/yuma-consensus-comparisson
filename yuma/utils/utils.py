@@ -14,7 +14,7 @@ def run_simulation(
     """
     Runs the simulation over multiple epochs using the specified Yuma function.
     """
-    from yuma.yuma import Yuma3, YumaConfig
+    from yuma.yuma import Yuma4, YumaConfig
     dividends_per_validator = {validator: [] for validator in validators}
     B_state: Optional[torch.Tensor] = None
     server_consensus_weight: Optional[torch.Tensor] = None
@@ -28,7 +28,7 @@ def run_simulation(
 
         if B_state is not None and epoch == reset_bonds_epoch and server_consensus_weight[reset_bonds_miner_index] == 0.0:
             B_state[:, reset_bonds_miner_index] = 0.0
-        result = Yuma3(W=W, S=S, B_old=B_state, config=config)
+        result = Yuma4(W=W, S=S, B_old=B_state, config=config)
 
         B_state = result['validator_bonds']
         server_consensus_weight = result['server_consensus_weight']
