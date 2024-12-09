@@ -17,6 +17,7 @@ def run_simulation(
     from yuma.yuma import Yuma3, YumaConfig
     dividends_per_validator = {validator: [] for validator in validators}
     B_state: Optional[torch.Tensor] = None
+    server_consensus_weight: Optional[torch.Tensor] = None
 
     for epoch in range(num_epochs):
         W = weights[epoch]
@@ -25,11 +26,12 @@ def run_simulation(
         stakes_tao = S * config.total_subnet_stake
         stakes_units = stakes_tao / 1_000
 
-        if B_state is not None and epoch == reset_bonds_epoch:
+        if B_state is not None and epoch == reset_bonds_epoch and server_consensus_weight[reset_bonds_miner_index] == 0.0:
             B_state[:, reset_bonds_miner_index] = 0.0
         result = Yuma3(W=W, S=S, B_old=B_state, config=config)
 
         B_state = result['validator_bonds']
+        server_consensus_weight = result['server_consensus_weight']
         D_normalized = result['validator_reward_normalized']
 
         E_i = config.validator_emission_ratio * D_normalized
