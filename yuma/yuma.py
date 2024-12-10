@@ -22,14 +22,14 @@ class YumaConfig:
     validator_emission_ratio = 0.41
     total_subnet_stake = 1_000_000
 
-def Yuma(
+def YumaSubtensor(
     W: torch.Tensor,
     S: torch.Tensor,
     B_old: Optional[torch.Tensor] = None,
     config: YumaConfig = YumaConfig()
 ) -> Dict[str, Union[torch.Tensor, float]]:
     """
-    Original Yuma function with bonds and EMA calculation.
+    Currently implemented Subtensor Yuma function.
     """
 
     # === Weight ===
@@ -42,7 +42,7 @@ def Yuma(
     P = (S.view(-1, 1) * W).sum(dim=0)
 
     # === Consensus ===
-    C = torch.zeros(W.shape[1])
+    C = torch.zeros(W.shape[1], dtype=torch.float64)
 
     for i, miner_weight in enumerate(W.T):
         c_high = 1.0
@@ -74,9 +74,10 @@ def Yuma(
     T_v = W_clipped.sum(dim=1) / W.sum(dim=1)
 
     # === Bonds ===
-    W_b = (1 - config.bond_penalty) * W + config.bond_penalty * W_clipped
-    B = S.view(-1, 1) * W_b / (S.view(-1, 1) * W_b).sum(dim=0)
-    B = B.nan_to_num(0)
+    B = S.view(-1, 1) * W_clipped
+    B_sum = B.sum(dim=0)
+    B = B / (B_sum + 1e-6)
+    B = torch.nan_to_num(B)
 
     a = b = None
     bond_alpha = config.bond_alpha
@@ -95,9 +96,13 @@ def Yuma(
     if B_old is not None:
         B_ema = bond_alpha * B + (1 - bond_alpha) * B_old
     else:
-        B_ema = B
+        B_ema = B.clone()
 
-    # === Dividend ===
+    B_ema_sum = B_ema.sum(dim=0)
+    B_ema = B_ema / (B_ema_sum + 1e-6)
+    B_ema = torch.nan_to_num(B_ema)
+
+    # === Dividend Calculation===
     D = (B_ema * I).sum(dim=1)
     D_normalized = D / (D.sum() + 1e-6)
 
@@ -111,7 +116,6 @@ def Yuma(
         "server_incentive": I,
         "server_trust": T,
         "validator_trust": T_v,
-        "weight_for_bond": W_b,
         "validator_bond": B,
         "validator_ema_bond": B_ema,
         "validator_reward": D,

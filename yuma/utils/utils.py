@@ -12,7 +12,7 @@ def run_simulation(
     """
     Runs the simulation over multiple epochs using the specified Yuma function.
     """
-    from yuma.yuma import Yuma, YumaConfig
+    from yuma.yuma import YumaSubtensor, YumaConfig
     dividends_per_validator = {validator: [] for validator in validators}
     B_state: Optional[torch.Tensor] = None
 
@@ -23,7 +23,7 @@ def run_simulation(
         stakes_tao = S * config.total_subnet_stake
         stakes_units = stakes_tao / 1_000
 
-        result = Yuma(W=W, S=S, B_old=B_state, config=config)
+        result = YumaSubtensor(W=W, S=S, B_old=B_state, config=config)
 
         B_state = result['validator_ema_bond']
         D_normalized = result['validator_reward_normalized']
