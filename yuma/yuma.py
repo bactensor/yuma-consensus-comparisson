@@ -1,35 +1,64 @@
 
-import math
 import torch
-import json
-from typing import Dict, Optional, Union
 from dataclasses import dataclass
-from yuma.cases import cases
-from yuma.utils.utils import run_simulation, calculate_total_dividends
+from dataclasses import asdict, dataclass, field
+from typing import Literal
+
+
+@dataclass
+class SimulationHyperparameters:
+    kappa: float = 0.5
+    bond_penalty: float = None
+    total_epoch_emission: float = 100.0
+    validator_emission_ratio: float = 0.41
+    total_subnet_stake: float = 1_000_000.0
+    consensus_precision: int = 100_000
+    liquid_alpha_consensus_mode: Literal["CURRENT", "PREVIOUS", "MIXED"] = "CURRENT"
+
+@dataclass
+class YumaParams:
+    bond_moving_avg: float = 0.1
+    liquid_alpha: bool = False
+    alpha_high: float = 0.3
+    alpha_low: float = 0.1
+    decay_rate: float = 0.1
+    capacity_alpha: float = 0.1
+    alpha_sigmoid_steepness: float = 10.0
+    override_consensus_high: float | None = None
+    override_consensus_low: float | None = None
 
 @dataclass
 class YumaConfig:
-    kappa: float = 0.5
-    bond_penalty: float = 1.0
-    bond_alpha: float = 0.1
-    liquid_alpha: bool = False
-    alpha_high: float = 0.9
-    alpha_low: float = 0.7
-    precision: int = 100_000
-    override_consensus_high: Optional[float] = None
-    override_consensus_low: Optional[float] = None
-    total_epoch_emission = 100
-    validator_emission_ratio = 0.41
-    total_subnet_stake = 1_000_000
+    simulation: SimulationHyperparameters = field(
+        default_factory=SimulationHyperparameters
+    )
+    yuma_params: YumaParams = field(default_factory=YumaParams)
+
+    def __post_init__(self):
+        # Flatten fields for direct access
+        simulation_dict = asdict(self.simulation)
+        yuma_params_dict = asdict(self.yuma_params)
+
+        for key, value in simulation_dict.items():
+            setattr(self, key, value)
+
+        for key, value in yuma_params_dict.items():
+            setattr(self, key, value)
+
 
 def Yuma(
     W: torch.Tensor,
     S: torch.Tensor,
-    B_old: Optional[torch.Tensor] = None,
-    config: YumaConfig = YumaConfig()
-) -> Dict[str, Union[torch.Tensor, float]]:
+    num_servers: int,
+    num_validators: int,
+    use_full_matrices: bool,
+    B_old: torch.Tensor | None = None,
+    C_old: torch.Tensor | None = None,
+    config: YumaConfig = YumaConfig(),
+) -> dict[str, torch.Tensor | None | float]:
     """
-    Original Yuma function with bonds and EMA calculation.
+    Python Impementation of the Original Yuma function with bonds and EMA calculation.
+    https://github.com/opentensor/subtensor/blob/main/docs/consensus.md#consensus-policy
     """
 
     # === Weight ===
@@ -48,7 +77,7 @@ def Yuma(
         c_high = 1.0
         c_low = 0.0
 
-        while (c_high - c_low) > 1 / config.precision:
+        while (c_high - c_low) > 1 / config.consensus_precision:
             c_mid = (c_high + c_low) / 2.0
             _c_sum = (miner_weight > c_mid) * S
             if _c_sum.sum() > config.kappa:
@@ -75,25 +104,29 @@ def Yuma(
 
     # === Bonds ===
     W_b = (1 - config.bond_penalty) * W + config.bond_penalty * W_clipped
-    B = S.view(-1, 1) * W_b / (S.view(-1, 1) * W_b).sum(dim=0)
+    B = S.view(-1, 1) * W_b
+    B_sum = B.sum(dim=0)
+    B = B / B_sum
     B = B.nan_to_num(0)
 
-    a = b = None
-    bond_alpha = config.bond_alpha
-    if config.liquid_alpha:
-        consensus_high = config.override_consensus_high if config.override_consensus_high is not None else C.quantile(0.75)
-        consensus_low = config.override_consensus_low if config.override_consensus_low is not None else C.quantile(0.25)
-
-        if consensus_high == consensus_low:
-            consensus_high = C.quantile(0.99)
-
-        a = (math.log(1 / config.alpha_high - 1) - math.log(1 / config.alpha_low - 1)) / (consensus_low - consensus_high)
-        b = math.log(1 / config.alpha_low - 1) + a * consensus_low
-        alpha = 1 / (1 + math.e ** (-a * C + b))  # alpha to the old weight
-        bond_alpha = 1 - torch.clamp(alpha, config.alpha_low, config.alpha_high)
+    a = b = torch.tensor(float("nan"))
+    alpha = 1 - config.bond_moving_avg
+    if config.liquid_alpha and (C_old is not None):
+        from .simulation_utils import _compute_liquid_alpha
+        alpha = _compute_liquid_alpha(
+            W=W,
+            B=B_old,
+            C=C,
+            alpha_sigmoid_steepness=config.alpha_sigmoid_steepness,
+            alpha_low=config.alpha_low,
+            alpha_high=config.alpha_high,
+            num_validators=num_validators,
+            num_servers=num_servers,
+            use_full_matrices=use_full_matrices,
+        )
 
     if B_old is not None:
-        B_ema = bond_alpha * B + (1 - bond_alpha) * B_old
+        B_ema = alpha * B + (1 - alpha) * B_old
     else:
         B_ema = B
 
@@ -116,28 +149,7 @@ def Yuma(
         "validator_ema_bond": B_ema,
         "validator_reward": D,
         "validator_reward_normalized": D_normalized,
-        "bond_alpha": bond_alpha,
+        "alpha": alpha,
         "alpha_a": a,
-        "alpha_b": b
+        "alpha_b": b,
     }
-
-if __name__ == "__main__":
-    config = YumaConfig()
-    total_dividends_per_case = {}
-    for case in cases:
-        dividends_per_validator = run_simulation(
-            validators=case.validators,
-            stakes=case.stakes_epochs,
-            weights=case.weights_epochs,
-            num_epochs=case.num_epochs,
-            config=config,
-        )
-        total_dividends, _ = calculate_total_dividends(
-            validators=case.validators,
-            dividends_per_validator=dividends_per_validator,
-            base_validator=case.base_validator,
-            num_epochs=case.num_epochs,
-        )
-        total_dividends_per_case[case.name] = total_dividends
-    
-    print(json.dumps(total_dividends_per_case, indent=4))
