@@ -46,8 +46,9 @@ class YumaConfig:
             setattr(self, key, value)
 
 
-def Yuma(
+def Yuma2b(
     W: torch.Tensor,
+    W_prev: torch.Tensor,
     S: torch.Tensor,
     num_servers: int,
     num_validators: int,
@@ -57,12 +58,15 @@ def Yuma(
     config: YumaConfig = YumaConfig(),
 ) -> dict[str, torch.Tensor | None | float]:
     """
-    Python Impementation of the Original Yuma function with bonds and EMA calculation.
-    https://github.com/opentensor/subtensor/blob/main/docs/consensus.md#consensus-policy
+    Yuma2B is designed to solve the problem of weight clipping influencing the current bond values for small stakers (validators).
+    The Bonds from the previous epoch are used to calculate Bonds EMA.
     """
 
     # === Weight ===
     W = (W.T / (W.sum(dim=1) + 1e-6)).T
+
+    if W_prev is None:
+        W_prev = W
 
     # === Stake ===
     S = S / S.sum()
@@ -90,7 +94,7 @@ def Yuma(
     C = (C / C.sum() * 65_535).int() / 65_535
 
     # === Consensus clipped weight ===
-    W_clipped = torch.min(W, C)
+    W_clipped = torch.min(W_prev, C)
 
     # === Rank ===
     R = (S.view(-1, 1) * W_clipped).sum(dim=0)
@@ -103,10 +107,8 @@ def Yuma(
     T_v = W_clipped.sum(dim=1) / W.sum(dim=1)
 
     # === Bonds ===
-    W_b = (1 - config.bond_penalty) * W + config.bond_penalty * W_clipped
-    B = S.view(-1, 1) * W_b
-    B_sum = B.sum(dim=0)
-    B = B / B_sum
+    W_b = (1 - config.bond_penalty) * W_prev + config.bond_penalty * W_clipped
+    B = S.view(-1, 1) * W_b / (S.view(-1, 1) * W_b).sum(dim=0)
     B = B.nan_to_num(0)
 
     a = b = torch.tensor(float("nan"))
