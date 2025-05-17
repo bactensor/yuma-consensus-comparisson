@@ -46,7 +46,7 @@ class YumaConfig:
             setattr(self, key, value)
 
 
-def Yuma(
+def Yuma1(
     W: torch.Tensor,
     S: torch.Tensor,
     num_servers: int,
@@ -57,8 +57,7 @@ def Yuma(
     config: YumaConfig = YumaConfig(),
 ) -> dict[str, torch.Tensor | None | float]:
     """
-    Python Impementation of the Original Yuma function with bonds and EMA calculation.
-    https://github.com/opentensor/subtensor/blob/main/docs/consensus.md#consensus-policy
+    Ancient Yuma from the past
     """
 
     # === Weight ===
@@ -110,7 +109,7 @@ def Yuma(
     B = B.nan_to_num(0)
 
     a = b = torch.tensor(float("nan"))
-    alpha = 1 - config.bond_moving_avg
+    alpha = 1
     if config.liquid_alpha and (C_old is not None):
         from .simulation_utils import _compute_liquid_alpha
         alpha = _compute_liquid_alpha(
