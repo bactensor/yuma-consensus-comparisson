@@ -46,7 +46,7 @@ class YumaConfig:
             setattr(self, key, value)
 
 
-def Yuma(
+def YumaRust(
     W: torch.Tensor,
     S: torch.Tensor,
     num_servers: int,
@@ -57,8 +57,7 @@ def Yuma(
     config: YumaConfig = YumaConfig(),
 ) -> dict[str, torch.Tensor | None | float]:
     """
-    Python Impementation of the Original Yuma function with bonds and EMA calculation.
-    https://github.com/opentensor/subtensor/blob/main/docs/consensus.md#consensus-policy
+    Currently implemented Subtensor Yuma function.
     """
 
     # === Weight ===
@@ -128,7 +127,11 @@ def Yuma(
     if B_old is not None:
         B_ema = alpha * B + (1 - alpha) * B_old
     else:
-        B_ema = B
+        B_ema = B.clone()
+
+    B_ema_sum = B_ema.sum(dim=0)
+    B_ema = B_ema / (B_ema_sum + 1e-6)
+    B_ema = torch.nan_to_num(B_ema)
 
     # === Dividend ===
     D = (B_ema * I).sum(dim=1)
